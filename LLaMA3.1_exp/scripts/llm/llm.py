@@ -1,13 +1,14 @@
 import transformers
 import torch
 
-model_id = "meta-llama/Meta-Llama-3.1-70B-Instruct"
+model_id = "meta-llama/Meta-Llama-3.1-8B-Instruct"
 
 pipeline = transformers.pipeline(
     "text-generation",
     model=model_id,
     model_kwargs={"torch_dtype": torch.bfloat16, "cache_dir": "../model"},
     device_map="auto",
+    temperature=0.1
 )
 
 def fact_check(constrain, claim):
