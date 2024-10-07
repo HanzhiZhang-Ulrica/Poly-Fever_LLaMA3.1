@@ -1,9 +1,13 @@
+# -*- coding: utf-8 -*-
+
 import csv
 import string
 import torch
 import tempfile
 import os
 import random
+import pickle
+# import time
 
 from deep_translator import GoogleTranslator
 from joblib import Parallel, delayed
@@ -11,16 +15,18 @@ from tqdm.auto import tqdm
 from llm import llm
 
 # File paths
-data_file_path = '../data/Poly-FEVER_all.tsv'
-record_file_path = 'observe_LLaMA3.1_70B_record.tsv'
-output_file_path = 'observe_LLaMA3.1_70B_output.tsv'
+# data_file_path = '../data/Poly-FEVER_all.tsv'
+num_files_to_load = 4
+split_file_path = '100_pickle_files'
+record_file_path = 'observe_LLaMA3.1_8B_record_0.01split_0.1temp_v100.tsv'
+output_file_path = 'observe_LLaMA3.1_8B_output_0.01split_0.1temp_v100.tsv'
 header = ['en', 'zh-CN', 'hi', 'ar', 'bn', 'ja', 'ko', 'ta', 'th', 'ka', 'am']
 
 # Number of parallel jobs
-n_jobs = 4
+n_jobs = 1
 
 # Percentage of data to select
-select_percent = 1
+select_percent = 0.01
 
 constrain_translations = {
     'en': "Assess the truthfulness of the user's claim and provide a response. \nUse 'true' to indicate that the claim is true, 'false' to indicate that it is false. \nYour response should only consist of 'true' or 'false', without any additional characters or punctuation.", 
@@ -42,19 +48,20 @@ Use 'true' for it contains affirming words like 'Correct,' 'TRUE,', "really" or 
 Use 'false' for it contains negating or contradictory phrases like 'Fake,' 'False,' or any form of correction or contradiction within the input. 
 Respond with only 'true' or 'false' for the input, without any additional text, characters, or punctuation."""
 
-def check_gpu_memory():
-    """ Returns the free and total memory of the first CUDA device """
-    if torch.cuda.is_available():
-        device_index = 0  # Explicitly set to the first device
-        device = torch.device(f"cuda:{device_index}")
-        torch.cuda.set_device(device)
-        total_memory = torch.cuda.get_device_properties(device).total_memory
-        free_memory = total_memory - torch.cuda.memory_allocated(device)
-        return free_memory, total_memory
-    else:
-        return 0, 0  # Default if no GPU is available
+# def check_gpu_memory():
+#     """ Returns the free and total memory of the first CUDA device """
+#     if torch.cuda.is_available():
+#         device_index = 0  # Explicitly set to the first device
+#         device = torch.device(f"cuda:{device_index}")
+#         torch.cuda.set_device(device)
+#         total_memory = torch.cuda.get_device_properties(device).total_memory
+#         free_memory = total_memory - torch.cuda.memory_allocated(device)
+#         return free_memory, total_memory
+#     else:
+#         return 0, 0  # Default if no GPU is available
 
 def process_row(row, temp_file_path):
+    # process_start = time.time()
     idx, label, *claims = row
     label = label.lower().translate(str.maketrans('', '', string.punctuation))
     record_row = [idx, label]
@@ -67,10 +74,19 @@ def process_row(row, temp_file_path):
             constrain = constrain_translations[language]
 
             try:
+                # start_inference = time.time()
                 response_label = llm.fact_check(constrain, claim)
+                # end_inference = time.time()
+                # print(f"Processed claim in {end_inference - start_inference:.2f} seconds")
                 if response_label not in ['true', 'false']:
+                    # start_translate = time.time()
                     trans_response = GoogleTranslator(source=language, target='en').translate(response_label)
+                    # end_translate = time.time()
+                    # print(f"Translated response in {end_translate - start_translate:.2f} seconds")
+                    # start_cllasify = time.time()
                     response_label = llm.classify_sentence(classification_prompt, trans_response)
+                    # end_classify = time.time()
+                    # print(f"Classified response in {end_classify - start_cllasify:.2f} seconds")
 
                 record_row.append(response_label)
                 if response_label == label:
@@ -87,6 +103,9 @@ def process_row(row, temp_file_path):
         writer = csv.writer(file_temp, delimiter='\t')
         writer.writerow(record_row)
 
+    # process_end = time.time()
+    # print(f"Processed row in {process_end - process_start:.2f} seconds")
+
     return local_T_cnt, local_total_cnt
 
 if __name__ == "__main__":
@@ -101,20 +120,25 @@ if __name__ == "__main__":
 
     # Data processing
     filtered_data = []
-    with open(data_file_path, 'r', encoding='utf-8') as file:
-        tsv_reader = csv.reader(file, delimiter='\t')
-        all_rows = list(tsv_reader)  # Read all rows into a list
+    for i in range(1, num_files_to_load + 1):
+        filename = f'{split_file_path}/filtered_data_split_{i}.pkl'  # Form the filename with leading zeros
+        with open(filename, 'rb') as file:
+            data_subset = pickle.load(file)
+            filtered_data.extend(data_subset)
+    # with open(data_file_path, 'r', encoding='utf-8') as file:
+    #     tsv_reader = csv.reader(file, delimiter='\t')
+    #     all_rows = list(tsv_reader)  # Read all rows into a list
 
-        # Calculate the number of rows to select based on the percentage
-        num_rows_to_select = int(select_percent * len(all_rows))
+    #     # Calculate the number of rows to select based on the percentage
+    #     num_rows_to_select = int(select_percent * len(all_rows))
 
-        # Generate random indices to select
-        selected_indices = random.sample(range(len(all_rows)), num_rows_to_select)
+    #     # Generate random indices to select
+    #     selected_indices = random.sample(range(len(all_rows)), num_rows_to_select)
 
-        for i, row in enumerate(all_rows):
-            if i in selected_indices:
-                selected_row = [row[0], row[1]] + row[2:13]
-                filtered_data.append(selected_row)
+    #     for i, row in enumerate(all_rows):
+    #         if i in selected_indices:
+    #             selected_row = [row[0], row[1]] + row[2:13]
+    #             filtered_data.append(selected_row)
 
     # Parallel processing
     results = Parallel(n_jobs=n_jobs)(
