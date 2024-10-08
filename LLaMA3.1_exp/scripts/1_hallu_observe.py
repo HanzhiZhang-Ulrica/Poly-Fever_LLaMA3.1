@@ -5,7 +5,6 @@ import string
 import torch
 import tempfile
 import os
-import random
 import pickle
 # import time
 
@@ -16,17 +15,14 @@ from llm import llm
 
 # File paths
 # data_file_path = '../data/Poly-FEVER_all.tsv'
-num_files_to_load = 4
+num_files_to_load = 100
 split_file_path = '100_pickle_files'
-record_file_path = 'observe_LLaMA3.1_8B_record_0.01split_0.1temp_v100.tsv'
-output_file_path = 'observe_LLaMA3.1_8B_output_0.01split_0.1temp_v100.tsv'
+record_file_path = 'observe_LLaMA3.1_8B_record_1split_0.1temp_h100.tsv'
+output_file_path = 'observe_LLaMA3.1_8B_output_1split_0.1temp_h100.tsv'
 header = ['en', 'zh-CN', 'hi', 'ar', 'bn', 'ja', 'ko', 'ta', 'th', 'ka', 'am']
 
 # Number of parallel jobs
-n_jobs = 1
-
-# Percentage of data to select
-select_percent = 0.01
+n_jobs = 9
 
 constrain_translations = {
     'en': "Assess the truthfulness of the user's claim and provide a response. \nUse 'true' to indicate that the claim is true, 'false' to indicate that it is false. \nYour response should only consist of 'true' or 'false', without any additional characters or punctuation.", 
@@ -125,20 +121,6 @@ if __name__ == "__main__":
         with open(filename, 'rb') as file:
             data_subset = pickle.load(file)
             filtered_data.extend(data_subset)
-    # with open(data_file_path, 'r', encoding='utf-8') as file:
-    #     tsv_reader = csv.reader(file, delimiter='\t')
-    #     all_rows = list(tsv_reader)  # Read all rows into a list
-
-    #     # Calculate the number of rows to select based on the percentage
-    #     num_rows_to_select = int(select_percent * len(all_rows))
-
-    #     # Generate random indices to select
-    #     selected_indices = random.sample(range(len(all_rows)), num_rows_to_select)
-
-    #     for i, row in enumerate(all_rows):
-    #         if i in selected_indices:
-    #             selected_row = [row[0], row[1]] + row[2:13]
-    #             filtered_data.append(selected_row)
 
     # Parallel processing
     results = Parallel(n_jobs=n_jobs)(
